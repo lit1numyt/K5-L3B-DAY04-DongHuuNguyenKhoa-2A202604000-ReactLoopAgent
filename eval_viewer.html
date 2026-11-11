@@ -1,0 +1,281 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Evaluation Dashboard</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #101318; color: #e5e7eb;
+    margin: 0; padding: 32px;
+  }
+  h1 { margin-bottom: 6px; }
+  .muted { color: #9ca3af; }
+  .panel {
+    background: #1b2029; border: 1px solid #303744;
+    border-radius: 12px; padding: 18px; margin: 16px 0;
+  }
+  .stats, .groups {
+    display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr));
+    gap: 12px;
+  }
+  .stat { font-size: 13px; color: #9ca3af; }
+  .stat strong { display: block; font-size: 27px; color: #fff; margin-top: 5px; }
+  .group { background: #242b36; padding: 14px; border-radius: 9px; }
+  .group strong { font-size: 22px; }
+  input, select {
+    background: #242b36; color: white; border: 1px solid #46505f;
+    border-radius: 7px; padding: 10px; margin: 5px;
+  }
+  button {
+    background: #303b4c; color: white; border: 1px solid #46505f;
+    border-radius: 7px; padding: 8px 12px; cursor: pointer;
+  }
+  button:hover { background: #46546a; }
+  .case {
+    border: 1px solid #303744; border-radius: 10px;
+    margin: 10px 0; overflow: hidden;
+  }
+  .case-head {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px; cursor: pointer; background: #1b2029;
+  }
+  .case-head:hover { background: #252d39; }
+  .score { font-size: 23px; font-weight: bold; min-width: 55px; }
+  .low { color: #fb7185; }
+  .mid { color: #fbbf24; }
+  .high { color: #4ade80; }
+  .case-info { flex: 1; min-width: 0; }
+  .case-info small { color: #9ca3af; }
+  .details { padding: 18px; border-top: 1px solid #303744; }
+  .details h4 { margin-bottom: 5px; color: #93c5fd; }
+  pre {
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    background: #101318; padding: 12px; border-radius: 8px;
+    font-size: 12px; color: #d1d5db;
+  }
+  .pill {
+    font-size: 11px; padding: 4px 8px; border-radius: 20px;
+    background: #303b4c; color: #cbd5e1;
+  }
+  .error { color: #fb7185; }
+  @media(max-width:600px) {
+    body { padding: 14px; }
+    .case-head { gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Agent Evaluation Dashboard</h1>
+<p class="muted">Load your eval JSON to inspect performance and identify weak test cases.</p>
+
+<div class="panel">
+  <input type="file" id="file" accept=".json,application/json">
+  <span id="filename" class="muted">No file loaded</span>
+</div>
+
+<div id="dashboard" hidden>
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h3>Performance by test group</h3>
+    <div class="groups" id="groups"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Test cases</h3>
+    <input id="search" placeholder="Search ID, question, feedback...">
+    <select id="group">
+      <option value="ALL">All groups</option>
+      <option value="E">E — Investigation</option>
+      <option value="A">A — Agent behavior</option>
+      <option value="H">H — Hard cases</option>
+    </select>
+    <select id="sort">
+      <option value="asc">Lowest score first</option>
+      <option value="desc">Highest score first</option>
+      <option value="id">Original ID order</option>
+    </select>
+    <select id="threshold">
+      <option value="all">All scores</option>
+      <option value="60">Below 60</option>
+      <option value="70">Below 70</option>
+      <option value="80">Below 80</option>
+    </select>
+    <div id="cases"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let data = null;
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;",
+    '"':"&quot;", "'":"&#39;"
+  }[c]));
+}
+
+function groupOf(id) {
+  return String(id).charAt(0).toUpperCase();
+}
+
+function scoreOf(c) {
+  const score = c.grade?.score;
+  return typeof score === "number" ? score : null;
+}
+
+function scoreClass(score) {
+  if (score === null) return "error";
+  if (score < 60) return "low";
+  if (score < 80) return "mid";
+  return "high";
+}
+
+function render() {
+  if (!data) return;
+
+  const cases = data.cases || [];
+  const scored = cases.filter(c => scoreOf(c) !== null);
+  const average = scored.length
+    ? scored.reduce((s,c) => s + scoreOf(c), 0) / scored.length
+    : null;
+
+  $("dashboard").hidden = false;
+
+  const summary = data.summary || {};
+  const stats = [
+    ["Overall score", summary.score_0_100 ?? "—"],
+    ["Scored cases", `${summary.scored_cases ?? scored.length}/${summary.total_cases ?? cases.length}`],
+    ["Unscored cases", summary.unscored_cases ?? cases.length-scored.length],
+    ["Mean of scored cases", average === null ? "—" : average.toFixed(2)]
+  ];
+
+  $("stats").innerHTML = stats.map(([label,value]) =>
+    `<div class="panel stat">${label}<strong>${escapeHTML(value)}</strong></div>`
+  ).join("");
+
+  const groups = ["E","A","H"];
+  $("groups").innerHTML = groups.map(g => {
+    const items = cases.filter(c => groupOf(c.id) === g);
+    const valid = items.filter(c => scoreOf(c) !== null);
+    const avg = valid.length
+      ? valid.reduce((s,c) => s+scoreOf(c),0)/valid.length
+      : null;
+    return `<div class="group">
+      <small>${g} GROUP</small>
+      <strong class="${scoreClass(avg)}">${avg === null ? "—" : avg.toFixed(1)}</strong>
+      <div class="muted">${valid.length}/${items.length} scored</div>
+    </div>`;
+  }).join("");
+
+  renderCases();
+}
+
+function renderCases() {
+  const cases = [...(data.cases || [])];
+  const query = $("search").value.toLowerCase();
+  const group = $("group").value;
+  const sort = $("sort").value;
+  const threshold = $("threshold").value;
+
+  let filtered = cases.filter(c => {
+    const text = [
+      c.id, c.question, c.expected, c.grade?.reason,
+      c.grade?.improvement, c.result?.answer
+    ].join(" ").toLowerCase();
+
+    if (query && !text.includes(query)) return false;
+    if (group !== "ALL" && groupOf(c.id) !== group) return false;
+
+    const score = scoreOf(c);
+    if (threshold !== "all" &&
+        (score === null || score >= Number(threshold))) return false;
+
+    return true;
+  });
+
+  filtered.sort((a,b) => {
+    if (sort === "id") return a.id.localeCompare(b.id, undefined, {numeric:true});
+    const x = scoreOf(a), y = scoreOf(b);
+    if (x === null) return -1;
+    if (y === null) return 1;
+    return sort === "asc" ? x-y : y-x;
+  });
+
+  $("cases").innerHTML = filtered.map((c,i) => {
+    const score = scoreOf(c);
+    const grade = c.grade || {};
+    const result = c.result || {};
+    const violations = grade.mechanical?.violations || [];
+
+    return `
+    <details class="case">
+      <summary class="case-head">
+        <span class="score ${scoreClass(score)}">
+          ${score === null ? "N/A" : score}
+        </span>
+        <div class="case-info">
+          <strong>${escapeHTML(c.id)}</strong>
+          <br><small>${escapeHTML(c.question || "")}</small>
+        </div>
+        <span class="pill">${escapeHTML(grade.status || result.status || "unknown")}</span>
+      </summary>
+      <div class="details">
+        <h4>Question</h4>
+        <p>${escapeHTML(c.question)}</p>
+
+        <h4>Expected</h4>
+        <p>${escapeHTML(c.expected)}</p>
+
+        <h4>Actual answer</h4>
+        <pre>${escapeHTML(result.answer || result.error || "No answer")}</pre>
+
+        <h4>Judge reason</h4>
+        <p>${escapeHTML(grade.reason || "Not available")}</p>
+
+        <h4>Suggested improvement</h4>
+        <p>${escapeHTML(grade.improvement || "Not available")}</p>
+
+        <h4>Score dimensions</h4>
+        <pre>${escapeHTML(JSON.stringify(grade.dimensions || {},null,2))}</pre>
+
+        <h4>Mechanical violations</h4>
+        <pre>${escapeHTML(JSON.stringify(violations,null,2))}</pre>
+
+        <h4>Execution trace</h4>
+        <pre>${escapeHTML(JSON.stringify(result.trace || [],null,2))}</pre>
+
+        <h4>Usage</h4>
+        <pre>${escapeHTML(JSON.stringify({
+          agent: result.usage || [],
+          judge: grade.judge_usage || {}
+        },null,2))}</pre>
+      </div>
+    </details>`;
+  }).join("") || "<p class='muted'>No matching cases.</p>";
+}
+
+$("file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  try {
+    data = JSON.parse(await file.text());
+    $("filename").textContent = file.name;
+    render();
+  } catch(err) {
+    alert("Invalid JSON: " + err.message);
+  }
+});
+
+["search","group","sort","threshold"].forEach(id => {
+  $(id).addEventListener("input", renderCases);
+});
+</script>
+</body>
+</html>
