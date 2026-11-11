@@ -8,11 +8,27 @@ from status_tools import StatusTools
 from bonus.tools import BonusTools
 
 
-def run(question, mode, provider_name, model, max_steps, fail=False, bonus=False):
-    provider = Provider(provider_name, model)
-    tools = BonusTools(mode) if bonus else StatusTools(mode, fail=fail)
-    return run_agent(question, provider, tools, max_steps=max_steps)
+def run(question, mode, provider_name, model, max_steps, fail = False, bonus = False):
 
+    try:
+        provider = Provider(provider_name, model)
+    except (ValueError, RuntimeError) as e:
+        return {
+            "status": "error",
+            "answer": "",
+            "trace": [{
+                "event": "error",
+                "step": 0,
+                "type": "INVALID_PROVIDER",
+                "message": str(e),
+            }],
+            "usage": [],
+            "error": str(e),
+        }
+
+    tools = BonusTools(mode) if bonus else StatusTools(mode, fail=fail)
+
+    return run_agent(question, provider, tools, max_steps=max_steps)
 
 def main():
     p = argparse.ArgumentParser(description='Chạy status agent')

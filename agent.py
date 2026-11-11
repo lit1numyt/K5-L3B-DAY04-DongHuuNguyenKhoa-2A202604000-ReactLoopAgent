@@ -1,5 +1,40 @@
 import json
+import re
 from status_tools import SCHEMAS
+from urllib.parse import urlparse
+
+URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
+
+
+def extract_urls(value):
+    """Extract meaningful source URLs, excluding bare provider homepages."""
+    urls = set()
+
+    if isinstance(value, dict):
+        for item in value.values():
+            urls.update(extract_urls(item))
+
+    elif isinstance(value, list):
+        for item in value:
+            urls.update(extract_urls(item))
+
+    elif isinstance(value, str):
+        for url in URL_PATTERN.findall(value):
+            url = url.rstrip(".,;:!?)']")
+
+            parsed = urlparse(url)
+
+            if parsed.path in ("", "/"):
+                continue
+
+            urls.add(url)
+
+    return urls
+
+def has_source_citation(answer, url):
+    """Accept either a Markdown citation or a plain source URL."""
+    markdown_link = f"[{url}]({url})"
+    return markdown_link in answer or url in answer
 
 """Bài tập chính: hiện chưa có lời giải. Xem GUIDE.md."""
 
@@ -22,6 +57,8 @@ def run_agent(question, provider, tools, max_steps=6):
     trace = []
     usage = []
     answer = ""
+
+    required_sources = set()
 
 
     def finish(status, error = None):
@@ -51,13 +88,19 @@ def run_agent(question, provider, tools, max_steps=6):
             response = provider.complete(messages, SCHEMAS)
 
         except Exception as e:
-            return {
-                "status": "error",
-                "answer": answer,
-                "trace": trace,
-                "usage": usage,
-                "error": str(e)
-            }
+            trace.append({
+                "event": "error",
+                "step": step,
+                "type": "PROVIDER_ERROR",
+                "message": str(e),
+            })
+
+            # print("DEBUG provider error:", repr(e))
+            # print("DEBUG step:", step)
+            # print("DEBUG answer:", answer)
+            # print("DEBUG required sources:", required_sources)
+
+            return finish("error", str(e))
 
         message = response["message"]
         calls = response.get("calls") or []
@@ -102,19 +145,9 @@ def run_agent(question, provider, tools, max_steps=6):
 
             except (json.JSONDecodeError, TypeError, ValueError):
                 result = {"error": "INVALID_ARGUMENTS"}
-            
-                trace.append({
-                    "event": "tool",
-                    "step": step,
-                    "name": name,
-                    "arguments": raw_arguments,
-                    "result": result,
-                })
 
             else:
-
                 try:
-
                     result = tools.execute(name, arguments)
 
                 except TimeoutError as e:
@@ -135,13 +168,18 @@ def run_agent(question, provider, tools, max_steps=6):
                         "message": str(e),
                     }
                 
-                trace.append({
-                    "event": "tool",
-                    "step": step,
-                    "name": name,
-                    "arguments": arguments,
-                    "result": result,
-                })
+            trace.append({
+                "event": "tool",
+                "step": step,
+                "name": name,
+                "arguments": arguments if isinstance(arguments, dict)
+                             else raw_arguments,
+                "result": result,
+            })
+
+            if isinstance(result, dict) and not result.get("error"):
+                required_sources.update(extract_urls(result))
+            
 
             messages.append({
                 "role": "tool",
@@ -150,6 +188,40 @@ def run_agent(question, provider, tools, max_steps=6):
             })
 
         if finish_reason == "stop" and not calls:
+            missing_sources = [
+                url for url in sorted(required_sources)
+                if not has_source_citation(answer, url)
+            ]
+
+            if missing_sources:
+                trace.append({
+                    "event": "validation_missing_source",
+                    "step": step,
+                    "missing_sources": missing_sources,
+                })
+
+                revision_prompt = (
+                    "Your previous answer is missing required source "
+                    "citations. Revise the answer and include every "
+                    "missing source below as a Markdown link using "
+                    "the exact format [URL](URL).\n\n"
+                    "Missing sources:\n"
+                    + "\n".join(
+                        f"- [{url}]({url})"
+                        for url in missing_sources
+                    )
+                    + "\n\n"
+                    "Do not invent additional sources. Preserve the "
+                    "factual meaning of your previous answer."
+                )
+
+                messages.append({
+                    "role": "user",
+                    "content": revision_prompt,
+                })
+
+                continue
+
             return finish("completed")
 
     trace.append({
