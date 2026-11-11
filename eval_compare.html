@@ -1,0 +1,836 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eval Regression Viewer</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --blue: #58a6ff;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 28px;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .container { max-width: 1450px; margin: auto; }
+
+  h1 { margin: 0; font-size: 25px; }
+  h2 { font-size: 16px; margin: 0 0 14px; }
+  h3 { font-size: 14px; margin: 0 0 8px; }
+
+  .subtitle { color: var(--muted); margin: 5px 0 24px; }
+
+  .upload-grid, .stats-grid, .group-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .panel, .stat, .group-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .upload-box {
+    border: 1px dashed #484f58;
+    border-radius: 8px;
+    padding: 18px;
+    background: var(--panel2);
+  }
+
+  .upload-box label {
+    display: block;
+    font-weight: 650;
+    margin-bottom: 10px;
+  }
+
+  input[type="file"] {
+    width: 100%;
+    color: var(--muted);
+  }
+
+  .filename {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  button, select, input[type="search"] {
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 9px 11px;
+    font: inherit;
+  }
+
+  button { cursor: pointer; }
+  button:hover { border-color: var(--blue); }
+
+  .primary {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    font-weight: 650;
+  }
+
+  .primary:disabled { opacity: .4; cursor: not-allowed; }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    align-items: center;
+    margin: 16px 0;
+  }
+
+  .toolbar input[type="search"] { flex: 1; min-width: 190px; }
+
+  .stat-label {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 5px;
+  }
+
+  .stat-value {
+    font-size: 26px;
+    font-weight: 750;
+    letter-spacing: -.5px;
+  }
+
+  .stat-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .neutral { color: var(--muted); }
+  .warning { color: var(--yellow); }
+
+  .group-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  .group-score {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 5px 0;
+  }
+
+  .group-meta { color: var(--muted); font-size: 12px; }
+
+  .change-summary {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 14px 0;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    border-radius: 20px;
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot.up { background: var(--green); }
+  .dot.down { background: var(--red); }
+  .dot.same { background: var(--muted); }
+  .dot.added { background: var(--blue); }
+  .dot.removed { background: var(--yellow); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th, td {
+    padding: 11px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+
+  th {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    z-index: 1;
+  }
+
+  tbody tr:hover { background: #1c2129; }
+
+  .case-id { font-weight: 700; white-space: nowrap; }
+  .question { max-width: 440px; min-width: 180px; }
+  .score { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .delta { font-weight: 750; white-space: nowrap; }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .tag.up { background: #12351f; color: var(--green); }
+  .tag.down { background: #421b1b; color: var(--red); }
+  .tag.same { background: #292e36; color: var(--muted); }
+  .tag.added { background: #102c4c; color: var(--blue); }
+  .tag.removed { background: #3b2d12; color: var(--yellow); }
+  .tag.unscored { background: #292e36; color: var(--muted); }
+
+  details { border-bottom: 1px solid var(--border); }
+  details summary { cursor: pointer; padding: 12px 4px; }
+  details summary:hover { color: var(--blue); }
+
+  .detail-content {
+    padding: 8px 12px 18px;
+    color: #c9d1d9;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-content pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 12px;
+    font-size: 12px;
+    max-height: 360px;
+    overflow: auto;
+  }
+
+  .detail-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .detail-block {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 12px;
+    min-width: 0;
+  }
+
+  .detail-block p { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  .muted { color: var(--muted); }
+  .empty { text-align: center; padding: 35px; color: var(--muted); }
+  .hidden { display: none !important; }
+
+  @media (max-width: 800px) {
+    body { padding: 14px; }
+    .upload-grid, .stats-grid { grid-template-columns: 1fr; }
+    .group-grid { grid-template-columns: 1fr; }
+    .detail-columns { grid-template-columns: 1fr; }
+    .table-wrap { overflow-x: auto; }
+  }
+</style>
+</head>
+
+<body>
+<div class="container">
+  <h1>Eval Regression Viewer</h1>
+  <p class="subtitle">Compare two evaluation runs and identify regressions, improvements, and score changes.</p>
+
+  <div class="upload-grid">
+    <div class="panel">
+      <div class="upload-box">
+        <label for="oldFile">Baseline — Previous evaluation</label>
+        <input type="file" id="oldFile" accept=".json,application/json">
+        <div class="filename" id="oldName">No file selected</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="upload-box">
+        <label for="newFile">New — Current evaluation</label>
+        <input type="file" id="newFile" accept=".json,application/json">
+        <div class="filename" id="newName">No file selected</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:22px">
+    <button class="primary" id="compareBtn" disabled>Compare evaluations</button>
+    <span class="muted" id="status">Select two JSON files to begin.</span>
+  </div>
+
+  <div id="results" class="hidden">
+    <h2>Overall comparison</h2>
+    <div class="stats-grid" id="stats"></div>
+
+    <h2>Group comparison</h2>
+    <div class="group-grid" id="groups"></div>
+
+    <h2>Case changes</h2>
+    <div class="change-summary" id="changeSummary"></div>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Search case ID or question...">
+
+      <select id="filter">
+        <option value="all">All changes</option>
+        <option value="down">Regressions only</option>
+        <option value="up">Improvements only</option>
+        <option value="same">Unchanged</option>
+        <option value="added">New cases</option>
+        <option value="removed">Removed cases</option>
+        <option value="unscored">Unscored / missing</option>
+      </select>
+
+      <select id="groupFilter">
+        <option value="all">All groups</option>
+      </select>
+
+      <select id="sort">
+        <option value="worst">Sort: Biggest regression first</option>
+        <option value="best">Sort: Biggest improvement first</option>
+        <option value="id">Sort: Case ID</option>
+        <option value="old">Sort: Old score</option>
+        <option value="new">Sort: New score</option>
+      </select>
+    </div>
+
+    <div class="panel table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Case</th>
+            <th>Group</th>
+            <th>Previous</th>
+            <th>Current</th>
+            <th>Change</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody id="caseTable"></tbody>
+      </table>
+      <div id="empty" class="empty hidden">No cases match these filters.</div>
+    </div>
+
+    <h2 style="margin-top:26px">Case details</h2>
+    <div class="panel" id="details">
+      <div class="muted">Select a case row to inspect its previous and current evaluation details.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let oldData = null;
+let newData = null;
+let comparisons = [];
+
+$("oldFile").addEventListener("change", e => loadFile(e.target.files[0], "old"));
+$("newFile").addEventListener("change", e => loadFile(e.target.files[0], "new"));
+
+async function loadFile(file, side) {
+  if (!file) return;
+
+  try {
+    const parsed = JSON.parse(await file.text());
+
+    if (side === "old") {
+      oldData = parsed;
+      $("oldName").textContent = file.name;
+    } else {
+      newData = parsed;
+      $("newName").textContent = file.name;
+    }
+
+    $("compareBtn").disabled = !(oldData && newData);
+    $("status").textContent = oldData && newData
+      ? "Both files loaded. Ready to compare."
+      : "Waiting for the other file.";
+  } catch (err) {
+    $("status").textContent = `Invalid JSON: ${err.message}`;
+  }
+}
+
+function firstValue(obj, keys) {
+  if (!obj || typeof obj !== "object") return undefined;
+  for (const key of keys) {
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+  }
+}
+
+function findCaseArray(root) {
+  const preferred = ["results", "cases", "evaluations", "items", "case_results"];
+  for (const key of preferred) {
+    if (Array.isArray(root?.[key])) return root[key];
+  }
+
+  // Fallback: find the array containing the most case-like objects.
+  let best = [];
+  function walk(value) {
+    if (!value || typeof value !== "object") return;
+
+    if (Array.isArray(value)) {
+      const score = value.filter(x =>
+        x && typeof x === "object" &&
+        (
+          firstValue(x, ["case_id", "test_id", "id", "question", "prompt"]) !== undefined ||
+          firstValue(x, ["score", "final_score", "overall_score"]) !== undefined
+        )
+      ).length;
+
+      if (score > best.length) best = value;
+
+      value.forEach(walk);
+    } else {
+      Object.values(value).forEach(walk);
+    }
+  }
+
+  walk(root);
+  return best;
+}
+
+
+function getScore(item) {
+  // Your evaluator stores scores inside grade.score.
+  if (item?.grade?.score !== undefined && item.grade.score !== null) {
+    const n = Number(item.grade.score);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // Fallbacks for other possible formats.
+  let value = firstValue(item, [
+    "score",
+    "final_score",
+    "overall_score",
+    "total_score",
+    "normalized_score",
+    "mean_score"
+  ]);
+
+  if (value === undefined && item?.judge && typeof item.judge === "object") {
+    value = firstValue(item.judge, [
+      "score",
+      "final_score",
+      "overall_score"
+    ]);
+  }
+
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+
+function isUnscored(item, score) {
+  const status = String(
+    item?.grade?.status ??
+    firstValue(item, ["status", "result", "evaluation_status"]) ??
+    ""
+  ).toLowerCase();
+
+  return (
+    item?.scored === false ||
+    item?.unscored === true ||
+    status === "unscored" ||
+    status === "error" ||
+    status === "failed" ||
+    status === "skipped" ||
+    score === null
+  );
+}
+
+
+function getId(item, index) {
+  return String(firstValue(item, [
+    "case_id", "test_id", "id", "name", "case"
+  ]) ?? `CASE-${index + 1}`);
+}
+
+function getGroup(item, id) {
+  const explicit = firstValue(item, ["group", "category", "level", "difficulty"]);
+  if (explicit !== undefined) return String(explicit).toUpperCase();
+
+  const match = String(id).match(/^([A-Za-z]+)[-_]?\d+/);
+  return match ? match[1].toUpperCase() : "OTHER";
+}
+
+function getQuestion(item) {
+  return String(firstValue(item, [
+    "question", "prompt", "input", "query", "task"
+  ]) ?? "");
+}
+
+function normalize(root) {
+  const cases = findCaseArray(root);
+  const map = new Map();
+
+  cases.forEach((item, index) => {
+    if (!item || typeof item !== "object") return;
+
+    const id = getId(item, index);
+    const score = getScore(item);
+
+    map.set(id, {
+      id,
+      group: getGroup(item, id),
+      score,
+      unscored: isUnscored(item, score),
+      question: getQuestion(item),
+      raw: item
+    });
+  });
+
+  return { root, cases: map };
+}
+
+function findOverall(root, normalized) {
+  const summary = root?.summary || root?.metrics || root?.stats || {};
+
+  let value = firstValue(summary, [
+    "score_0_100",
+    "overall_score",
+    "mean_score",
+    "average_score",
+    "avg_score",
+    "score",
+    "overall"
+  ]);
+
+  if (value === undefined) {
+    value = firstValue(root, [
+      "score_0_100",
+      "overall_score",
+      "mean_score",
+      "average_score",
+      "avg_score"
+    ]);
+  }
+
+  if (value !== undefined && value !== null && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+
+  // Fallback: calculate the mean from scored cases.
+  const scored = [...normalized.cases.values()].filter(
+    x => !x.unscored && x.score !== null
+  );
+
+  if (!scored.length) return null;
+
+  return scored.reduce((sum, x) => sum + x.score, 0) / scored.length;
+}
+
+
+function average(items) {
+  const valid = items.filter(x => x && !x.unscored && x.score !== null);
+  if (!valid.length) return null;
+  return valid.reduce((s, x) => s + x.score, 0) / valid.length;
+}
+
+function fmt(value) {
+  return value === null || value === undefined ? "—" : Number(value).toFixed(2);
+}
+
+function signed(value) {
+  if (value === null || value === undefined) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function classify(oldCase, newCase) {
+  if (!oldCase) return "added";
+  if (!newCase) return "removed";
+
+  if (oldCase.unscored || newCase.unscored) return "unscored";
+
+  const delta = newCase.score - oldCase.score;
+  if (delta > 0.00001) return "up";
+  if (delta < -0.00001) return "down";
+  return "same";
+}
+
+function compare() {
+  const oldNorm = normalize(oldData);
+  const newNorm = normalize(newData);
+
+  const oldOverall = findOverall(oldData, oldNorm);
+  const newOverall = findOverall(newData, newNorm);
+
+  const ids = new Set([
+    ...oldNorm.cases.keys(),
+    ...newNorm.cases.keys()
+  ]);
+
+  comparisons = [...ids].map(id => {
+    const oldCase = oldNorm.cases.get(id) || null;
+    const newCase = newNorm.cases.get(id) || null;
+
+    return {
+      id,
+      oldCase,
+      newCase,
+      group: newCase?.group || oldCase?.group || "OTHER",
+      delta: oldCase && newCase &&
+        !oldCase.unscored && !newCase.unscored
+        ? newCase.score - oldCase.score
+        : null,
+      type: classify(oldCase, newCase)
+    };
+  });
+
+  renderStats(oldNorm, newNorm, oldOverall, newOverall);
+  renderGroups(oldNorm, newNorm);
+  renderSummary();
+  populateGroupFilter();
+
+  $("results").classList.remove("hidden");
+  renderTable();
+}
+
+function renderStats(oldNorm, newNorm, oldOverall, newOverall) {
+  const delta = oldOverall !== null && newOverall !== null
+    ? newOverall - oldOverall
+    : null;
+
+  const counts = countTypes();
+
+  const cards = [
+    {
+      label: "Previous overall",
+      value: fmt(oldOverall),
+      sub: `${oldNorm.cases.size} cases`
+    },
+    {
+      label: "Current overall",
+      value: fmt(newOverall),
+      sub: `${newNorm.cases.size} cases`
+    },
+    {
+      label: "Overall change",
+      value: signed(delta),
+      cls: delta > 0 ? "positive" : delta < 0 ? "negative" : "neutral",
+      sub: "Current minus previous"
+    },
+    {
+      label: "Regressions",
+      value: counts.down,
+      cls: counts.down ? "negative" : "positive",
+      sub: `${counts.up} improvements · ${counts.same} unchanged`
+    }
+  ];
+
+  $("stats").innerHTML = cards.map(c => `
+    <div class="stat">
+      <div class="stat-label">${c.label}</div>
+      <div class="stat-value ${c.cls || ""}">${c.value}</div>
+      <div class="stat-sub">${c.sub}</div>
+    </div>
+  `).join("");
+}
+
+function renderGroups(oldNorm, newNorm) {
+  const groups = [...new Set(
+    [...oldNorm.cases.values(), ...newNorm.cases.values()].map(x => x.group)
+  )].sort();
+
+  $("groups").innerHTML = groups.map(group => {
+    const oldItems = [...oldNorm.cases.values()].filter(x => x.group === group);
+    const newItems = [...newNorm.cases.values()].filter(x => x.group === group);
+
+    const oldAvg = average(oldItems);
+    const newAvg = average(newItems);
+    const delta = oldAvg !== null && newAvg !== null ? newAvg - oldAvg : null;
+    const cls = delta > 0 ? "positive" : delta < 0 ? "negative" : "neutral";
+
+    return `
+      <div class="group-card">
+        <h3>${esc(group)}</h3>
+        <div class="group-score ${cls}">${signed(delta)}</div>
+        <div class="group-meta">
+          Previous: ${fmt(oldAvg)} → Current: ${fmt(newAvg)}
+        </div>
+        <div class="group-meta" style="margin-top:5px">
+          ${newItems.filter(x => !x.unscored).length} scored current cases
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function countTypes() {
+  return comparisons.reduce((acc, item) => {
+    acc[item.type] = (acc[item.type] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function renderSummary() {
+  const c = countTypes();
+  const items = [
+    ["down", "Regressions", c.down || 0],
+    ["up", "Improvements", c.up || 0],
+    ["same", "Unchanged", c.same || 0],
+    ["added", "New cases", c.added || 0],
+    ["removed", "Removed cases", c.removed || 0],
+    ["unscored", "Unscored / missing", c.unscored || 0]
+  ];
+
+  $("changeSummary").innerHTML = items.map(([type, label, count]) => `
+    <span class="pill">
+      <span class="dot ${type}"></span>
+      ${label}: <strong>${count}</strong>
+    </span>
+  `).join("");
+}
+
+function populateGroupFilter() {
+  const groups = [...new Set(comparisons.map(x => x.group))].sort();
+  $("groupFilter").innerHTML =
+    '<option value="all">All groups</option>' +
+    groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
+}
+
+function renderTable() {
+  const query = $("search").value.toLowerCase();
+  const filter = $("filter").value;
+  const group = $("groupFilter").value;
+  const sort = $("sort").value;
+
+  let rows = comparisons.filter(x => {
+    const question = x.newCase?.question || x.oldCase?.question || "";
+    const matchesSearch = x.id.toLowerCase().includes(query) ||
+      question.toLowerCase().includes(query);
+
+    return matchesSearch &&
+      (filter === "all" || x.type === filter) &&
+      (group === "all" || x.group === group);
+  });
+
+  rows.sort((a, b) => {
+    if (sort === "worst") return (a.delta ?? Infinity) - (b.delta ?? Infinity);
+    if (sort === "best") return (b.delta ?? -Infinity) - (a.delta ?? -Infinity);
+    if (sort === "id") return a.id.localeCompare(b.id);
+    if (sort === "old") return (a.oldCase?.score ?? -Infinity) - (b.oldCase?.score ?? -Infinity);
+    if (sort === "new") return (a.newCase?.score ?? -Infinity) - (b.newCase?.score ?? -Infinity);
+    return 0;
+  });
+
+  $("caseTable").innerHTML = rows.map(x => {
+    const oldScore = x.oldCase?.unscored ? null : x.oldCase?.score;
+    const newScore = x.newCase?.unscored ? null : x.newCase?.score;
+    const question = x.newCase?.question || x.oldCase?.question || "";
+
+    return `
+      <tr data-id="${esc(x.id)}" style="cursor:pointer">
+        <td class="case-id">${esc(x.id)}</td>
+        <td>${esc(x.group)}</td>
+        <td class="score">${fmt(oldScore)}</td>
+        <td class="score">${fmt(newScore)}</td>
+        <td class="delta ${x.delta > 0 ? "positive" : x.delta < 0 ? "negative" : "neutral"}">
+          ${signed(x.delta)}
+        </td>
+        <td><span class="tag ${x.type}">${labelFor(x.type)}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  $("empty").classList.toggle("hidden", rows.length !== 0);
+
+  $("caseTable").querySelectorAll("tr").forEach(row => {
+    row.addEventListener("click", () => {
+      const item = comparisons.find(x => x.id === row.dataset.id);
+      if (item) renderDetails(item);
+    });
+  });
+}
+
+function labelFor(type) {
+  return ({
+    up: "IMPROVED",
+    down: "REGRESSED",
+    same: "UNCHANGED",
+    added: "NEW",
+    removed: "REMOVED",
+    unscored: "UNSCORED"
+  })[type] || type.toUpperCase();
+}
+
+function renderDetails(item) {
+  const oldCase = item.oldCase;
+  const newCase = item.newCase;
+
+  const question = newCase?.question || oldCase?.question || "(No question found)";
+
+  $("details").innerHTML = `
+    <h3>${esc(item.id)} <span class="tag ${item.type}">${labelFor(item.type)}</span></h3>
+    <p class="muted">Group: ${esc(item.group)} · Change: ${signed(item.delta)}</p>
+    <div class="detail-block" style="margin:12px 0">
+      <strong>Question</strong>
+      <p>${esc(question)}</p>
+    </div>
+    <div class="detail-columns">
+      <div class="detail-block">
+        <strong>Previous score: ${fmt(oldCase?.score)}</strong>
+        ${oldCase ? `<pre>${esc(JSON.stringify(oldCase.raw, null, 2))}</pre>` : '<p class="muted">Case did not exist in baseline.</p>'}
+      </div>
+      <div class="detail-block">
+        <strong>Current score: ${fmt(newCase?.score)}</strong>
+        ${newCase ? `<pre>${esc(JSON.stringify(newCase.raw, null, 2))}</pre>` : '<p class="muted">Case is absent from current evaluation.</p>'}
+      </div>
+    </div>
+  `;
+}
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;",
+    '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
+$("compareBtn").addEventListener("click", compare);
+["search", "filter", "groupFilter", "sort"].forEach(id => {
+  $(id).addEventListener("input", renderTable);
+  $(id).addEventListener("change", renderTable);
+});
+</script>
+</body>
+</html>
