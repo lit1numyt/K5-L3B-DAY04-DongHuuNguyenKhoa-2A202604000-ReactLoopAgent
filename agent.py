@@ -5,29 +5,30 @@ from urllib.parse import urlparse
 
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
 
-
 def extract_urls(value):
-    """Extract meaningful source URLs, excluding bare provider homepages."""
+    """
+    Extract authoritative source URLs from explicit URL/source fields.
+    Ignore URLs mentioned inside arbitrary text or incident descriptions.
+    """
     urls = set()
 
     if isinstance(value, dict):
-        for item in value.values():
-            urls.update(extract_urls(item))
+        for key, item in value.items():
+
+            if key in ("url", "source") and isinstance(item, str):
+                for url in URL_PATTERN.findall(item):
+                    url = url.rstrip(".,;:!?)']")
+                    parsed = urlparse(url)
+
+                    if parsed.path not in ("", "/"):
+                        urls.add(url)
+
+            elif isinstance(item, (dict, list)):
+                urls.update(extract_urls(item))
 
     elif isinstance(value, list):
         for item in value:
             urls.update(extract_urls(item))
-
-    elif isinstance(value, str):
-        for url in URL_PATTERN.findall(value):
-            url = url.rstrip(".,;:!?)']")
-
-            parsed = urlparse(url)
-
-            if parsed.path in ("", "/"):
-                continue
-
-            urls.add(url)
 
     return urls
 
