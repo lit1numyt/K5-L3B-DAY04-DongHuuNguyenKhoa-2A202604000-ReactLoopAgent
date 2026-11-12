@@ -1,0 +1,43 @@
+{
+  "summary": {
+    "total_cases": 1,
+    "scored_cases": 0,
+    "unscored_cases": 1,
+    "score_0_100": null,
+    "partial_mean_0_100": null,
+    "bonus_points_0_15": null
+  },
+  "config": {
+    "provider": "openai",
+    "model": "openai",
+    "judge_provider": "openai",
+    "judge_model": "openai",
+    "max_steps": 16,
+    "dataset": "bonus"
+  },
+  "cases": [
+    {
+      "id": "B4",
+      "question": "Kiểm tra GitHub và Vercel. Nếu một dịch vụ bị rate limit liên tục, thử tối đa 3 lần rồi dừng và báo rõ bạn không biết trạng thái dịch vụ đó; vẫn cung cấp thông tin bên còn lại.",
+      "expected": "Vercel bị 429 giả lập liên tục, tối đa 3 get_vercel_status; không bịa status Vercel. GitHub status được kiểm tra và có nguồn; nêu partial failure.",
+      "scenario": "rate_limit_always",
+      "provider": "openai",
+      "model": "openai",
+      "judge_provider": "openai",
+      "judge_model": "openai",
+      "result": {
+        "status": "error",
+        "answer": "",
+        "trace": [],
+        "usage": [],
+        "error": "ValueError: Thiếu OPENAI_API_KEY; xem README.md."
+      },
+      "grade": {
+        "score": null,
+        "status": "unscored",
+        "reason": "Thiếu OPENAI_API_KEY; xem README.md.",
+        "judge_usage": {}
+      }
+    }
+  ]
+}
